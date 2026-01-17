@@ -6,3 +6,6 @@ node_modules
 key.key
 cert.cer
 .env
+
+!package.json
+!package-lock.json
