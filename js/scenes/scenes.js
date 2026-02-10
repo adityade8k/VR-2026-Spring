@@ -16,6 +16,8 @@ export default () => {
          { name: "bouncing"            , path: "./bouncing.js"            , public: true },
          { name: "multiplayer1"        , path: "./multiplayer1.js"        , public: true },
          { name: "clayInteractionTest" , path: "./clayInteractionTest.js" , public: true },
+         { name: "lightcycle"          , path: "./lightcycleGrid/lightcyclescene.js" , public: true },
+         { name: "lightcyclevc"        , path: "./lightcycleGrid/lightcyclevc.js"        , public: true },
       ]
    };
 }
