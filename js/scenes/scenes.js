@@ -24,6 +24,8 @@ export default () => {
          { name: "text7"        , path: "./text7.js"        , public: true },
          { name: "master1"      , path: "./master1.js"      , public: true },
          { name: "bouncing"     , path: "./bouncing.js"     , public: true },
+
+         { name: "lightCyclePvP"       , path: "./lightcycleGrid/lightCyclePvP.js"       , public: true },
       ]
    };
 }
