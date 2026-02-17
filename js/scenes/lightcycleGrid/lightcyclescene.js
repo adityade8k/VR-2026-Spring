@@ -69,19 +69,24 @@ export const init = async model => {
    let dir = [0, 1]; // start facing +Z
    let lastTime = model.time;
 
+   const sanitizeStick = stick => ({
+      x: Number.isFinite(stick?.x) ? stick.x : 0,
+      y: Number.isFinite(stick?.y) ? stick.y : 0,
+   });
+
    model.animate(() => {
       const t = model.time;
       const dt = Math.max(0, t - lastTime);
       lastTime = t;
 
-      const left = joyStickState.left  || { x: 0, y: 0 };
-      const right = joyStickState.right || { x: 0, y: 0 };
+      const left = sanitizeStick(joyStickState.left);
+      const right = sanitizeStick(joyStickState.right);
 
       const magLeft = Math.hypot(left.x, left.y);
       const magRight = Math.hypot(right.x, right.y);
 
       // Choose whichever joystick is being pushed more.
-      const active = magRight > magLeft ? right : left;
+      const active = magRight >= magLeft ? right : left;
       const mag = Math.max(magLeft, magRight);
 
       if (mag > deadZone) {
@@ -129,6 +134,8 @@ export const init = async model => {
       if (hitWall) {
          // Respawn at center and wait for next joystick input.
          isMoving = false;
+         dir = [0, 1];
+         lastTime = t;
          bike.setPosition(position[0], bikeY, position[2]);
          bike.setHeading(0);
          trail.reset(bike);
