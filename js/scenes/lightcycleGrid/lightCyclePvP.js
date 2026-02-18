@@ -203,34 +203,21 @@ export const init = async model => {
       const dt = Math.max(0, t - lastTime);
       lastTime = t;
 
-      const canUseMaster =
-         typeof isMasterClient === "function" &&
-         typeof clients !== "undefined";
-      const isMaster = canUseMaster && isMasterClient();
+      const hasClients =
+         typeof clients !== "undefined" &&
+         Array.isArray(clients) &&
+         clients.length > 0;
+      const localId = window.clientID !== undefined ? String(clientID) : "local";
+      const isMaster = hasClients ? clientID == clients[0] : true;
+      const hasClientState =
+         typeof clientState !== "undefined" &&
+         clientState &&
+         typeof clientState.isXR === "function";
       const isXRClient = window.clientID !== undefined &&
-         clientState?.isXR &&
+         hasClientState &&
          clientState.isXR(clientID);
       const isClientXR = id =>
-         clientState?.isXR && clientState.isXR(Number(id));
-
-      // Prefer simulating on the first XR client. If none, fall back to master.
-      let simulatorId = null;
-      if (typeof clients !== "undefined" && clients.length) {
-         for (const id of clients) {
-            if (clientState?.isXR && clientState.isXR(id)) {
-               simulatorId = String(id);
-               break;
-            }
-         }
-      }
-      if (!simulatorId && isXRClient)
-         simulatorId = String(clientID);
-      if (!simulatorId && isMaster && window.clientID !== undefined)
-         simulatorId = String(clientID);
-
-      const isSimulator = simulatorId !== null &&
-         window.clientID !== undefined &&
-         String(clientID) === simulatorId;
+         hasClientState && clientState.isXR(Number(id));
 
       // Emit local joystick turns to the server (XR-only).
       if (window.clientID !== undefined && isXRClient) {
@@ -242,22 +229,21 @@ export const init = async model => {
          }
       }
 
-      if (isSimulator)
-         window[inputKey] = server.synchronize(inputKey) || window[inputKey];
-      if (!isSimulator)
-         window[stateKey] = server.synchronize(stateKey) || window[stateKey];
+      window[inputKey] = server.synchronize(inputKey) || window[inputKey];
+      window[stateKey] = server.synchronize(stateKey) || window[stateKey];
 
       const state = window[stateKey];
       const inputs = window[inputKey];
 
-      if (isSimulator) {
+      if (isMaster) {
          const connectedIds = new Set();
-         if (typeof clients !== "undefined" && clients.length) {
+         if (hasClients) {
             for (const id of clients)
                connectedIds.add(String(id));
          }
-         if (!connectedIds.size && window.clientID !== undefined)
-            connectedIds.add(String(clientID));
+         else {
+            connectedIds.add(localId);
+         }
 
          for (const id of connectedIds) {
             if (!state.bikes[id])
@@ -307,7 +293,7 @@ export const init = async model => {
 
       for (const id in state.bikes) {
          const info = state.bikes[id];
-         updateLocalFromState(id, info, dt, !isSimulator);
+         updateLocalFromState(id, info, dt, !isMaster);
          const local = ensureLocalBike(id);
          local.trail.update(local.bike, t);
       }
