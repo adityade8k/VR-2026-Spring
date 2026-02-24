@@ -44,6 +44,38 @@ const TWEAKS = {
       moveSpeedRatio: 0.35,
       liftSpeedRatio: 0.5,
    },
+   instructions: {
+      offset: [-0.16, 0.08, 0.1],
+      rotation: [-Math.PI / 2, 0, 0],
+      scale: [0.7, 0.7, 0.7],
+      panelSize: [0.20, 0.12],
+      textScale: 0.85,
+      panelColor: [0, 0, 0],
+      panelOpacity: 1,
+      textColor: [0.95, 0.95, 0.95],
+   },
+   deathsLocal: {
+      offset: [-0.10, 0.08, 0.1],
+      rotation: [-Math.PI / 2, 0, 0],
+      scale: [0.7, 0.7, 0.7],
+      panelSize: [0.14, 0.08],
+      textScale: 1.5,
+      stackStep: 0.14,
+      panelColor: [0, 0, 0],
+      panelOpacity: 1,
+      textColor: [0.95, 0.95, 0.95],
+   },
+   deathsOther: {
+      offset: [-0.10, 0.08, -0.1],
+      rotation: [-Math.PI / 2, 0, 0],
+      scale: [0.7, 0.7, 0.7],
+      panelSize: [0.14, 0.08],
+      textScale: 1.5,
+      stackStep: 0.14,
+      panelColor: [0, 0, 0],
+      panelOpacity: 1,
+      textColor: [0.95, 0.95, 0.95],
+   },
 };
 
 export const init = async model => {
@@ -90,6 +122,27 @@ export const init = async model => {
    let minZ = basePosition[2] - half;
    let maxZ = basePosition[2] + half;
 
+   const instructionText = clay.text(
+      "INPUTS\n" +
+      
+      "Left Stick: move grid around\n" +
+      "Left Trigger: move grid down\n" +
+      "Left Grip: move grid up\n" +
+      "\n" +
+      "Right Stick: turn bike\n" +
+      "Let stick go to neutral\n" +
+      "to move again after respawn"
+   );
+   const instructionRoot = model.add();
+   const instructionBackground = instructionRoot.add("square")
+      .color(...TWEAKS.instructions.panelColor)
+      .opacity(TWEAKS.instructions.panelOpacity);
+   const instructionLabel = instructionRoot.add(instructionText)
+      .color(...TWEAKS.instructions.textColor);
+
+   const getDeathText = count => `DEATHS\n${count}`;
+   const deathPanels = new Map();
+
    const updateBounds = () => {
       minX = basePosition[0] - half;
       maxX = basePosition[0] + half;
@@ -100,6 +153,104 @@ export const init = async model => {
    const updateHeights = () => {
       floorY = basePosition[1] + 0.01;
       bikeY = floorY + wheelRadius;
+   };
+
+   const updateInstructionPanel = () => {
+      const { offset, rotation, scale, panelSize, textScale } = TWEAKS.instructions;
+      const panelX = gridPosition[0] + half + offset[0];
+      const panelY = gridPosition[1] + offset[1];
+      const panelZ = gridPosition[2] + half + offset[2];
+
+      instructionRoot.identity()
+         .move(panelX, panelY, panelZ)
+         .turnX(rotation[0])
+         .turnY(rotation[1])
+         .turnZ(rotation[2])
+         .scale(scale[0], scale[1], scale[2]);
+
+      instructionBackground.identity()
+         .scale(panelSize[0], panelSize[1], 1);
+
+      instructionLabel.identity()
+         .move(-panelSize[0] * 0.9, panelSize[1] * 0.75, 0.01)
+         .scale(textScale);
+   };
+
+   const createDeathPanel = config => {
+      const root = model.add();
+      const background = root.add("square")
+         .opacity(config.panelOpacity);
+      const label = root.add(clay.text(getDeathText(0)));
+      return { root, background, label, lastCount: 0 };
+   };
+
+   const updateDeathPanel = (id, count, colors, index, config) => {
+      let panel = deathPanels.get(id);
+      if (!panel) {
+         panel = createDeathPanel(config);
+         deathPanels.set(id, panel);
+      }
+
+      if (count !== panel.lastCount) {
+         panel.lastCount = count;
+         if (panel.root.nChildren() > 1)
+            panel.root.remove(1);
+         panel.label = panel.root.add(clay.text(getDeathText(count)));
+      }
+
+      const panelColor = colors?.body ?? config.panelColor;
+      const textColor = colors?.trail ?? config.textColor;
+      panel.background
+         .color(...panelColor);
+      panel.label
+         .color(...textColor);
+
+      const { offset, rotation, scale, panelSize, textScale, stackStep } = config;
+      const panelX = gridPosition[0] - half + offset[0];
+      const panelY = gridPosition[1] + offset[1];
+      const panelZ = gridPosition[2] + half + offset[2] - index * stackStep;
+
+      panel.root.identity()
+         .move(panelX, panelY, panelZ)
+         .turnX(rotation[0])
+         .turnY(rotation[1])
+         .turnZ(rotation[2])
+         .scale(scale[0], scale[1], scale[2]);
+
+      panel.background.identity()
+         .scale(panelSize[0], panelSize[1], 1);
+
+      panel.label.identity()
+         .move(-panelSize[0] * 0.7, panelSize[1] * 0.45, 0.01)
+         .scale(textScale);
+   };
+
+   const updateDeathPanels = (activeIds, localId, state) => {
+      const orderedIds = Array.from(activeIds).sort();
+      const localIndex = orderedIds.indexOf(String(localId));
+      if (localIndex > 0)
+         orderedIds.unshift(orderedIds.splice(localIndex, 1)[0]);
+
+      orderedIds.forEach((id, index) => {
+         const local = ensureLocalBike(id);
+         const colors = local.colors ?? pickPalette(id);
+         const info = state.bikes[id];
+         const spawnId = info?.spawnId ?? 0;
+         const count = Math.max(0, spawnId - 1);
+         const config = String(id) === String(localId)
+            ? TWEAKS.deathsLocal
+            : TWEAKS.deathsOther;
+         updateDeathPanel(String(id), count, colors, index, config);
+      });
+
+      for (const id of deathPanels.keys()) {
+         if (!activeIds.has(id)) {
+            const panel = deathPanels.get(id);
+            if (panel)
+               panel.root.identity().scale(0, 0, 0);
+            deathPanels.delete(id);
+         }
+      }
    };
 
    const directions = [
@@ -161,6 +312,9 @@ export const init = async model => {
          trailLevel: 0,
          bikeRoot,
          trailRoot,
+         deathCount: 0,
+         hasSpawned: false,
+         colors,
       });
       return localBikes.get(String(id));
    };
@@ -174,6 +328,11 @@ export const init = async model => {
       local.trail.reset();
       local.trailRoot.identity().scale(0, 0, 0);
       local.bikeRoot.identity().scale(0, 0, 0);
+      const panel = deathPanels.get(key);
+      if (panel) {
+         panel.root.identity().scale(0, 0, 0);
+         deathPanels.delete(key);
+      }
       localBikes.delete(key);
    };
 
@@ -215,6 +374,10 @@ export const init = async model => {
       const local = ensureLocalBike(id);
       const didRespawn = local.spawnId !== info.spawnId;
       if (didRespawn) {
+         if (local.hasSpawned)
+            local.deathCount += 1;
+         else
+            local.hasSpawned = true;
          local.renderPos = [info.x, info.z];
          if (info.trailLevel !== undefined) {
             local.trailLevel = info.trailLevel;
@@ -342,6 +505,8 @@ export const init = async model => {
          grid.setPosition(gridPosition[0], gridPosition[1], gridPosition[2]);
       }
 
+      updateInstructionPanel();
+
       if (isMaster) {
          const connectedIds = new Set();
          if (hasClients) {
@@ -421,6 +586,8 @@ export const init = async model => {
          local.trailRoot.identity().move(renderOffset[0], renderOffset[1], renderOffset[2]);
          local.trail.update(local.bike, t);
       }
+
+      updateDeathPanels(activeStateIds, localId, state);
    });
 };
 
