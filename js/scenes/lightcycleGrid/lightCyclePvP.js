@@ -7,48 +7,100 @@
 import { LightcycleGrid } from "./LightcycleGrid.js";
 import { Bike } from "./bike.js";
 import { BikeTrail } from "./biketrail.js";
-import { joyStickState } from "../../render/core/controllerInput.js";
+import { joyStickState, buttonState } from "../../render/core/controllerInput.js";
+
+const TWEAKS = {
+   grid: {
+      position: [0, 1.4, -0.2],
+      size: 1,
+      wallHeight: 0.05,
+      wallThickness: 0.001,
+      floorColor: [0.02, 0.05, 0.08],
+      wallColor: [0.1, 0.25, 0.35],
+      resolution: 50,
+   },
+   bike: {
+      baseRatio: 0.05,
+      wheelRadiusRatio: 0.16,
+      bodyLengthRatio: 0.7,
+   },
+   gameplay: {
+      wallMargin: 0.01,
+      speedRatio: 0.2,
+      smoothTime: 0.08,
+      deadZone: 0.25,
+      trailHitRadiusRatio: 0.9,
+      selfTrailIgnoreAge: 0.25,
+      spawnPaddingRatio: 0.08,
+   },
+   trail: {
+      thicknessRatio: 0.75,
+      segmentLengthRatio: 0.05,
+      lifetimeBase: 1,
+      lifetimeIncrement: 1,
+   },
+   gridControl: {
+      moveDeadZone: 0.2,
+      moveSpeedRatio: 0.35,
+      liftSpeedRatio: 0.5,
+   },
+};
 
 export const init = async model => {
    // Grid placement and size.
-   const position = [0, 1.4, -0.2];
-   const gridSize = 1;
-   const wallHeight = 0.05;
-   const wallThickness = 0.001;
+   const basePosition = TWEAKS.grid.position;
+   const gridSize = TWEAKS.grid.size;
+   const wallHeight = TWEAKS.grid.wallHeight;
+   const wallThickness = TWEAKS.grid.wallThickness;
 
-   new LightcycleGrid(model, {
-      position,
+   const grid = new LightcycleGrid(model, {
+      position: basePosition,
       gridSize,
       wallHeight,
       wallThickness,
-      floorColor: [0.02, 0.05, 0.08],
-      wallColor: [0.1, 0.25, 0.35],
-      gridResolution: 50,
+      floorColor: TWEAKS.grid.floorColor,
+      wallColor: TWEAKS.grid.wallColor,
+      gridResolution: TWEAKS.grid.resolution,
    });
 
    // Keep geometry constants in sync with Bike.update().
-   const floorY = position[1] + 0.01;
-   const base = gridSize * 0.05;
-   const wheelRadius = base * 0.16;
-   const bikeY = floorY + wheelRadius;
-   const bodyLength = base * 0.7;
+   let gridPosition = basePosition.slice();
+   let floorY = basePosition[1] + 0.01;
+   const base = gridSize * TWEAKS.bike.baseRatio;
+   const wheelRadius = base * TWEAKS.bike.wheelRadiusRatio;
+   let bikeY = floorY + wheelRadius;
+   const bodyLength = base * TWEAKS.bike.bodyLengthRatio;
 
    const trailOffset = bodyLength / 2 + wheelRadius;
 
    // Gameplay tuning.
    const half = gridSize / 2;
-   const wallMargin = 0.01;
-   const speed = gridSize * 0.2;
-   const smoothTime = 0.08;
-   const deadZone = 0.25;
-   const trailHitRadius = wheelRadius * 0.9;
-   const selfTrailIgnoreAge = 0.25;
-   const spawnPadding = gridSize * 0.08;
+   const wallMargin = TWEAKS.gameplay.wallMargin;
+   const speed = gridSize * TWEAKS.gameplay.speedRatio;
+   const smoothTime = TWEAKS.gameplay.smoothTime;
+   const deadZone = TWEAKS.gameplay.deadZone;
+   const trailHitRadius = wheelRadius * TWEAKS.gameplay.trailHitRadiusRatio;
+   const selfTrailIgnoreAge = TWEAKS.gameplay.selfTrailIgnoreAge;
+   const spawnPadding = gridSize * TWEAKS.gameplay.spawnPaddingRatio;
+   const trailLifetimeBase = TWEAKS.trail.lifetimeBase;
+   const trailLifetimeIncrement = TWEAKS.trail.lifetimeIncrement;
 
-   const minX = position[0] - half;
-   const maxX = position[0] + half;
-   const minZ = position[2] - half;
-   const maxZ = position[2] + half;
+   let minX = basePosition[0] - half;
+   let maxX = basePosition[0] + half;
+   let minZ = basePosition[2] - half;
+   let maxZ = basePosition[2] + half;
+
+   const updateBounds = () => {
+      minX = basePosition[0] - half;
+      maxX = basePosition[0] + half;
+      minZ = basePosition[2] - half;
+      maxZ = basePosition[2] + half;
+   };
+
+   const updateHeights = () => {
+      floorY = basePosition[1] + 0.01;
+      bikeY = floorY + wheelRadius;
+   };
 
    const directions = [
       [1, 0],
@@ -76,28 +128,40 @@ export const init = async model => {
 
    const pickPalette = id => palette[Math.abs(parseInt(id, 10) || 0) % palette.length];
 
+   const getTrailLifetime = trailLevel =>
+      trailLifetimeBase + trailLevel * trailLifetimeIncrement;
+
    const createLocalBike = id => {
       const colors = pickPalette(id);
-      const bike = new Bike(model, {
-         position: [position[0], bikeY, position[2]],
+      const bikeRoot = model.add();
+      const trailRoot = model.add();
+      const bike = new Bike(bikeRoot, {
+         position: [basePosition[0], bikeY, basePosition[2]],
          gridSize,
          bodyColor: colors.body,
          wheelColor: colors.wheel,
          accentColor: colors.accent,
       });
 
-      const trail = new BikeTrail(model, {
+      const trail = new BikeTrail(trailRoot, {
          gridSize,
          y: floorY + wheelRadius,
          height: wheelRadius * 2,
-         thickness: wallThickness * 0.75,
-         segmentLength: gridSize * 0.05,
-         lifetime: 6,
+         thickness: wallThickness * TWEAKS.trail.thicknessRatio,
+         segmentLength: gridSize * TWEAKS.trail.segmentLengthRatio,
+         lifetime: trailLifetimeBase,
          color: colors.trail,
          backOffset: trailOffset,
       });
 
-      localBikes.set(String(id), { bike, trail, spawnId: -1 });
+      localBikes.set(String(id), {
+         bike,
+         trail,
+         spawnId: -1,
+         trailLevel: 0,
+         bikeRoot,
+         trailRoot,
+      });
       return localBikes.get(String(id));
    };
 
@@ -108,8 +172,8 @@ export const init = async model => {
       if (!local)
          return;
       local.trail.reset();
-      local.trail.root.identity().scale(0, 0, 0);
-      local.bike.root.identity().scale(0, 0, 0);
+      local.trailRoot.identity().scale(0, 0, 0);
+      local.bikeRoot.identity().scale(0, 0, 0);
       localBikes.delete(key);
    };
 
@@ -126,10 +190,21 @@ export const init = async model => {
       const dir = randomDir();
       const prev = state.bikes[id];
       const spawnId = (prev?.spawnId ?? 0) + 1;
+      const trailLevel = prev ? (prev.trailLevel ?? 0) + 1 : 0;
 
-      state.bikes[id] = { x, z, dir, spawnId };
+      state.bikes[id] = {
+         x,
+         z,
+         dir,
+         spawnId,
+         isMoving: false,
+         needsNeutral: true,
+         trailLevel,
+      };
 
       const local = ensureLocalBike(id);
+      local.trailLevel = trailLevel;
+      local.trail.lifetime = getTrailLifetime(trailLevel);
       local.bike.setPosition(x, bikeY, z);
       local.bike.setHeadingFromDirection(dir[0], dir[1]);
       local.trail.reset(local.bike);
@@ -141,6 +216,10 @@ export const init = async model => {
       const didRespawn = local.spawnId !== info.spawnId;
       if (didRespawn) {
          local.renderPos = [info.x, info.z];
+         if (info.trailLevel !== undefined) {
+            local.trailLevel = info.trailLevel;
+            local.trail.lifetime = getTrailLifetime(info.trailLevel);
+         }
          local.bike.setPosition(info.x, bikeY, info.z);
          local.trail.reset(local.bike);
          local.spawnId = info.spawnId;
@@ -162,25 +241,28 @@ export const init = async model => {
    };
 
    const pickInputDirection = () => {
-      const left = joyStickState.left || { x: 0, y: 0 };
       const right = joyStickState.right || { x: 0, y: 0 };
-
-      const magLeft = Math.hypot(left.x, left.y);
-      const magRight = Math.hypot(right.x, right.y);
-      const active = magRight > magLeft ? right : left;
-      const mag = Math.max(magLeft, magRight);
+      const mag = Math.hypot(right.x, right.y);
 
       if (mag <= deadZone)
          return null;
 
-      const absX = Math.abs(active.x);
-      const absY = Math.abs(active.y);
+      const absX = Math.abs(right.x);
+      const absY = Math.abs(right.y);
       return absX > absY
-         ? [Math.sign(active.x) || 1, 0]
-         : [0, Math.sign(active.y) || 1];
+         ? [Math.sign(right.x) || 1, 0]
+         : [0, Math.sign(right.y) || 1];
    };
 
    const isPerpendicular = (a, b) => a[0] * b[0] + a[1] * b[1] === 0;
+
+   const sameInputDir = (a, b) => {
+      if (!a && !b)
+         return true;
+      if (!a || !b)
+         return false;
+      return a[0] === b[0] && a[1] === b[1];
+   };
 
    const hitWall = (x, z) =>
       x < minX + wallMargin || x > maxX - wallMargin ||
@@ -197,6 +279,10 @@ export const init = async model => {
 
    let lastInputDir = null;
    let lastTime = model.time;
+   let renderOffset = [0, 0, 0];
+   const gridMoveDeadZone = TWEAKS.gridControl.moveDeadZone;
+   const gridMoveSpeed = gridSize * TWEAKS.gridControl.moveSpeedRatio;
+   const gridLiftSpeed = gridSize * TWEAKS.gridControl.liftSpeedRatio;
 
    model.animate(() => {
       const t = model.time;
@@ -219,10 +305,10 @@ export const init = async model => {
       const isClientXR = id =>
          hasClientState && clientState.isXR(Number(id));
 
-      // Emit local joystick turns to the server (XR-only).
+      // Emit local right-joystick turns to the server (XR-only).
       if (window.clientID !== undefined && isXRClient) {
          const want = pickInputDirection();
-         if (want && (!lastInputDir || want[0] !== lastInputDir[0] || want[1] !== lastInputDir[1])) {
+         if (!sameInputDir(want, lastInputDir)) {
             window[inputKey][clientID] = { dir: want, time: t };
             server.broadcastGlobal(inputKey);
             lastInputDir = want;
@@ -234,6 +320,27 @@ export const init = async model => {
 
       const state = window[stateKey];
       const inputs = window[inputKey];
+      if (isXRClient) {
+         const leftStick = joyStickState.left || { x: 0, y: 0 };
+         const leftButtons = buttonState.left || [];
+         const leftTrigger = !!leftButtons[0]?.pressed;
+         const leftGrip = !!leftButtons[1]?.pressed || !!leftButtons[2]?.pressed;
+
+         const moveX = Math.abs(leftStick.x) > gridMoveDeadZone ? leftStick.x : 0;
+         const moveZ = Math.abs(leftStick.y) > gridMoveDeadZone ? leftStick.y : 0;
+         const moveY = leftGrip === leftTrigger ? 0 : (leftGrip ? 1 : -1);
+
+         renderOffset[0] += moveX * gridMoveSpeed * dt;
+         renderOffset[1] += moveY * gridLiftSpeed * dt;
+         renderOffset[2] += moveZ * gridMoveSpeed * dt;
+
+         gridPosition = [
+            basePosition[0] + renderOffset[0],
+            basePosition[1] + renderOffset[1],
+            basePosition[2] + renderOffset[2],
+         ];
+         grid.setPosition(gridPosition[0], gridPosition[1], gridPosition[2]);
+      }
 
       if (isMaster) {
          const connectedIds = new Set();
@@ -259,14 +366,29 @@ export const init = async model => {
          for (const id in state.bikes) {
             const bikeState = state.bikes[id];
             const input = inputs[id];
+            if (bikeState.isMoving === undefined)
+               bikeState.isMoving = true;
+            if (bikeState.needsNeutral === undefined)
+               bikeState.needsNeutral = false;
 
-            if (isClientXR(id) && input && input.dir && isPerpendicular(input.dir, bikeState.dir))
-               bikeState.dir = input.dir;
+            if (isClientXR(id)) {
+               const inputDir = input ? input.dir : null;
+               if (bikeState.needsNeutral) {
+                  if (!inputDir)
+                     bikeState.needsNeutral = false;
+               }
+               else if (inputDir) {
+                  if (!bikeState.isMoving)
+                     bikeState.isMoving = true;
+                  if (isPerpendicular(inputDir, bikeState.dir))
+                     bikeState.dir = inputDir;
+               }
+            }
 
             const [dx, dz] = bikeState.dir;
             let newX = bikeState.x;
             let newZ = bikeState.z;
-            if (isClientXR(id)) {
+            if (isClientXR(id) && bikeState.isMoving) {
                newX += dx * speed * dt;
                newZ += dz * speed * dt;
             }
@@ -295,6 +417,8 @@ export const init = async model => {
          const info = state.bikes[id];
          updateLocalFromState(id, info, dt, !isMaster);
          const local = ensureLocalBike(id);
+         local.bikeRoot.identity().move(renderOffset[0], renderOffset[1], renderOffset[2]);
+         local.trailRoot.identity().move(renderOffset[0], renderOffset[1], renderOffset[2]);
          local.trail.update(local.bike, t);
       }
    });
